@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Dict
 from numpy.typing import ArrayLike
 
-def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[str, List[str]], numerical_cols:List[str], as_frame:bool=False) -> np.ndarray:
+def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[str, List[str]], numerical_cols:List[str], as_frame:bool=False) -> np.ndarray | pd.DataFrame:
     """_summary_
 
     Args:
@@ -21,9 +21,8 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
         ValueError: If an ordinal column has only one category
 
     Returns:
-        np.ndarray: _description_
+        np.ndarray | pd.DataFrame: The (n_samples, n_samples) Gower distance matrix.
     """
-
     if not isinstance(X, pd.DataFrame):
         raise TypeError(f"Currently only apandas.DataFrame is supported. Data is of type: {type(X)}")
 
@@ -84,7 +83,7 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
             column_vector = column_data_encoded[:, np.newaxis]
             pairwise_difference_matrix = np.abs(column_data_encoded - column_vector)
             # calculate similarity
-            ordinal_similarity_matrix = np.zeros_like(pairwise_difference_matrix)
+            ordinal_similarity_matrix = np.zeros_like(pairwise_difference_matrix, dtype=np.float64)
             np.divide(
                 pairwise_difference_matrix,
                 ordinal_range,
