@@ -1,18 +1,31 @@
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from typing import List, Dict
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 
-def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[str, List[str]], numerical_cols:List[str], as_frame:bool=False) -> np.ndarray | pd.DataFrame:
-    """_summary_
+def gower_matrix(
+        X:pd.DataFrame,
+        *,
+        numerical_cols:List[str] = [],
+        nominal_cols:List[str] = [],
+        ordinal_cols:Dict[str, List[str]] = {},
+        as_frame:bool=False
+        ) -> NDArray[np.float64] | pd.DataFrame:
+    """
+    Calculate Gower's distance matrix for datasets with mixed datatypes.
+    Categorical variables do not have to be encoded as numbers, the strings in the columns of the DataFrame are used as they are for the similarity score calculation.
+    The values in the columns are assumed to be clean and free from leading and trailing spaces.
+
+    The rank of the ordinal values is calculated automatically with equal weights, the ordinal_cols List is assumed to be sorted.
+
+    In the case that a row or column has only NaN values, the resulting distance matrix will have a row / column filled with 1's in all possitions.
 
     Args:
-        X (pd.DataFrame): Data for which to calculate the Gower distance
+        X (pd.DataFrame): Data for which to calculate Gower's distance
+        numerical_cols (List[str]): A list containing the column names of the numerical features in the dataset.
         nominal_cols (List[str]): A list with the column names of the nominal features in the dataset.
         ordinal_cols (Dict[str, List[str]]): A dictionary whose keys are the names of the columns of ordinal data in the dataset.
                                              The values are the sorted list of possible categories.
-        numerical_cols (List[str]): A list containing the column names of the numerical features in the dataset
         as_frame (bool, optional): Whether to return the distance matrix as a DataFrame. Defaults to False.
 
     Raises:
@@ -36,7 +49,7 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
 
     for column in X.columns:
         # Get the column to handle it individually
-        column_data = X_encoded.loc[:, column].values
+        column_data = X_encoded.loc[:, column].to_numpy()
         # Calculate the weight matrix
         weight_matrix = get_weight_matrix_from(column_data)
         # For numeric data types
@@ -47,7 +60,7 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
                 raise ValueError(f"Feature {column} has constant variance. Handle explicitly before passing it to gower_matrix")
             # get the data from the column and create a column vector to use broadcasting
             column_vector = column_data[:, np.newaxis]
-            pairwise_difference_matrix = np.abs(column_data - column_vector) # This is a n_samples, n_samples matrix that contains the pairwise differences
+            pairwise_difference_matrix = np.abs(column_data - column_vector).astype(np.float64) # This is a n_samples, n_samples matrix that contains the pairwise differences
             
             # calculate the similarity
             numeric_similarity_matrix = np.zeros_like(pairwise_difference_matrix)
@@ -81,7 +94,7 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
             if ordinal_range == 0:
                 raise ValueError(f"Feature {column} has only one unique value. Handle explicitly before passing it to gower_matrix")
             column_vector = column_data_encoded[:, np.newaxis]
-            pairwise_difference_matrix = np.abs(column_data_encoded - column_vector)
+            pairwise_difference_matrix = np.abs(column_data_encoded - column_vector).astype(np.float64)
             # calculate similarity
             ordinal_similarity_matrix = np.zeros_like(pairwise_difference_matrix, dtype=np.float64)
             np.divide(
@@ -112,27 +125,42 @@ def gower_matrix(X:pd.DataFrame, *, nominal_cols:List[str], ordinal_cols:Dict[st
         return pd.DataFrame(1 - S)
     return 1 - S
     
-def get_weight_matrix_from(column_data:np.ndarray) -> np.ndarray:
+def get_weight_matrix_from(column_data:NDArray) -> NDArray[np.float64]:
     mask = ~pd.isna(column_data)
     mask_as_column_vector = mask[:, np.newaxis]
     return np.logical_and(mask_as_column_vector, mask).astype(np.float64)
 
 if __name__ == "__main__":
     
-    Xd=pd.DataFrame({'age':[21,21,19, 30,21,21,19,30,],
-                     'gender':['M','M','N','M','F','F','F','F'],
-                     'civil_status':['MARRIED','SINGLE','SINGLE','SINGLE','MARRIED','SINGLE','WIDOW','DIVORCED'],
-                     'salary':[3000.0,1200.0 ,32000.0,1800.0 ,2900.0 ,1100.0 ,10000.0,1500.0],
-                     'has_children':[1,0,1,1,1,0,0,1],
-                     'available_credit':[2200,100,22000,1100,2000,100,6000,2200]})
+    # quick test
+
+    Xd=pd.DataFrame(
+        {
+            'age':[21, 21, 19, 30, 21, 21, 19, 30, None],
+            'gender':['M', 'M', 'N', 'M', 'F', 'F', 'F', 'F', None],
+            'civil_status':['MARRIED', 'SINGLE', 'SINGLE', 'SINGLE', 'MARRIED', 'SINGLE', 'WIDOW', 'DIVORCED', None],
+            'salary':[3000.0, 1200.0, 32000.0, 1800.0, 2900.0, 1100.0, 10000.0, 1500.0, None],
+            'has_children':[1,0,1,1,1,0,0,1,None],
+            'available_credit':[2200, 100, 22000, 1100, 2000, 100, 6000, 2200, None]
+        }
+                )
+    
+    distance_matrix = gower_matrix(
+        Xd,
+        numerical_cols=["age", "salary", "available_credit"],
+        nominal_cols=["gender", "civil_status", "has_children"]
+        )
     
     is_result = np.array(
-            [[0.        , 0.3590238 , 0.6707398 , 0.31787416, 0.16872811, 0.52622986, 0.59697855, 0.47778758],
-             [0.3590238 , 0.        , 0.6964303 , 0.3138769 , 0.523629  , 0.16720603, 0.45600235, 0.65396350],
-             [0.6707398 , 0.6964303 , 0.        , 0.6552807 , 0.6728013 , 0.69696970, 0.74042800, 0.81519410],
-             [0.31787416, 0.3138769 , 0.6552807 , 0.        , 0.4824794 , 0.48108295, 0.74818605, 0.34332284],
-             [0.16872811, 0.523629  , 0.6728013 , 0.4824794 , 0.        , 0.35750175, 0.43237334, 0.31210360],
-             [0.52622986, 0.16720603, 0.6969697 , 0.48108295, 0.35750175, 0.        , 0.28987510, 0.48783620],
-             [0.59697855, 0.45600235, 0.740428  , 0.74818605, 0.43237334, 0.2898751 , 0.        , 0.57476616],
-             [0.47778758, 0.6539635 , 0.8151941 , 0.34332284, 0.3121036 , 0.4878362 , 0.57476616, 0.        ]], dtype=np.float64)
+            [[0.        , 0.3590238 , 0.6707398 , 0.31787416, 0.16872811, 0.52622986, 0.59697855, 0.47778758, 1.0],
+             [0.3590238 , 0.        , 0.6964303 , 0.3138769 , 0.523629  , 0.16720603, 0.45600235, 0.65396350, 1.0],
+             [0.6707398 , 0.6964303 , 0.        , 0.6552807 , 0.6728013 , 0.69696970, 0.74042800, 0.81519410, 1.0],
+             [0.31787416, 0.3138769 , 0.6552807 , 0.        , 0.4824794 , 0.48108295, 0.74818605, 0.34332284, 1.0],
+             [0.16872811, 0.523629  , 0.6728013 , 0.4824794 , 0.        , 0.35750175, 0.43237334, 0.31210360, 1.0],
+             [0.52622986, 0.16720603, 0.6969697 , 0.48108295, 0.35750175, 0.        , 0.28987510, 0.48783620, 1.0],
+             [0.59697855, 0.45600235, 0.740428  , 0.74818605, 0.43237334, 0.2898751 , 0.        , 0.57476616, 1.0],
+             [0.47778758, 0.6539635 , 0.8151941 , 0.34332284, 0.3121036 , 0.4878362 , 0.57476616, 0.        , 1.0],
+             [1.0       , 1.0       , 1.0       , 1.0       , 1.0       , 1.0       , 1.0       , 1.0       , 1.0]], dtype=np.float64)
+    
+    print(np.allclose(distance_matrix, is_result))
     
